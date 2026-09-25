@@ -6,6 +6,7 @@ struct MonitorTests {
     @MainActor
     static func main() async throws {
         testCounters()
+        testMenuImage()
         try testImagePersistence()
         let sampler = SystemSampler()
         _ = await sampler.sample(interface: "auto", smartInterval: 60)
@@ -40,6 +41,21 @@ struct MonitorTests {
         print("PASS: CPU tick wrap, 64-bit traffic, link reset, interface switch, offline")
     }
 
+    static func testMenuImage() {
+        precondition(NetworkMenuImage.rate(0) == "0B/s")
+        precondition(NetworkMenuImage.rate(1536) == "1.5K/s")
+        precondition(NetworkMenuImage.rate(.nan) == "0B/s")
+        precondition(NetworkMenuImage.rate(-1) == "0B/s")
+        precondition(NetworkMenuImage.rate(1e20) == "999T/s")
+        let image = NetworkMenuImage.make(download: 1e20, upload: 1536)
+        precondition(image.size == NSSize(width: 72, height: 22) && image.isTemplate)
+        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium)]
+        for text in ["↑ 999T/s", "↓ 9.9M/s"] {
+            precondition((text as NSString).size(withAttributes: attributes).width + 6 <= image.size.width)
+        }
+        print("PASS: fixed-width two-line network label and invalid rate handling")
+    }
+
     @MainActor
     static func testImagePersistence() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("status-monitor-test-\(UUID().uuidString)", isDirectory: true)
@@ -56,7 +72,19 @@ struct MonitorTests {
         bitmap.bitmapData!.initialize(repeating: 128, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
         let source = directory.appendingPathComponent("source.png")
         try bitmap.representation(using: .png, properties: [:])!.write(to: source)
+        var legacy = MonitorSettings()
+        legacy.showCPU = true
+        legacy.showGPU = true
+        legacy.showTemperature = true
+        legacy.compact = true
+        legacy.overlay = 0.72
+        legacy.pinned = true
+        defaults.set(try JSONEncoder().encode(legacy), forKey: "settings.v2")
         let preferences = Preferences(defaults: defaults, directory: directory.appendingPathComponent("AppSupport"))
+        precondition(!preferences.settings.showCPU && !preferences.settings.showGPU && !preferences.settings.showTemperature)
+        precondition(preferences.settings.showNetwork && !preferences.settings.compact)
+        precondition(preferences.settings.overlay == 0.72 && preferences.settings.pinned)
+        preferences.settings.showCPU = true // A subsequent manual choice must persist.
         preferences.importImage(source)
         precondition(preferences.image != nil && preferences.imageError == nil)
         precondition(preferences.image!.size.width <= 1600)
@@ -67,11 +95,12 @@ struct MonitorTests {
         let restored = Preferences(defaults: defaults, directory: directory.appendingPathComponent("AppSupport"))
         precondition(restored.image != nil, "Imported image must survive moving/deleting the original")
         precondition(restored.settings.blur == 7 && restored.settings.overlay == 0.4 && restored.settings.sensor == "Te05")
+        precondition(restored.settings.showCPU && !restored.settings.showGPU)
         restored.importImage(directory.appendingPathComponent("missing.png"))
         precondition(restored.image != nil && restored.imageError != nil, "Invalid imports must preserve the existing image")
         restored.removeImage()
         precondition(restored.image == nil)
         precondition(Preferences(defaults: defaults, directory: directory.appendingPathComponent("AppSupport")).image == nil)
-        print("PASS: image downsampling, persistence, missing original, invalid import, removal, settings reload")
+        print("PASS: image persistence, invalid import, removal, one-time network-menu migration and manual settings reload")
     }
 }

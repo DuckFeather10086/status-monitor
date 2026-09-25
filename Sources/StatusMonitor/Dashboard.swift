@@ -81,19 +81,23 @@ struct DashboardView: View {
                             .help(selectedTemperature == nil ? "\(preferences.settings.sensor): unavailable · \(store.metrics.thermal.status)" : "\(preferences.settings.sensor) · SMC")
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Text("SMART").foregroundStyle(.secondary)
+                                Label("Disk", systemImage: "internaldrive").foregroundStyle(.secondary)
                                 Spacer()
                                 Circle().fill(store.metrics.smartStatus == "Verified" ? Color.mint : Color.orange).frame(width: 5, height: 5)
                             }.font(.system(size: 10, weight: .medium))
                             Text(store.metrics.smartStatus).font(.system(size: 15, weight: .semibold, design: .rounded))
                                 .lineLimit(1).minimumScaleFactor(0.7)
-                            HStack(spacing: 4) {
-                                Image(systemName: "fanblades")
-                                Text(store.metrics.thermal.fans.map { String(Int($0.value.rounded())) }.joined(separator: " / "))
-                                if !store.metrics.thermal.fans.isEmpty { Text("RPM") }
-                            }.font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-                                .help(store.metrics.thermal.fans.isEmpty ? "No fan sensor" : "Fan speed")
+                            Text("S.M.A.R.T.").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
                         }.frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading).cardSurface()
+                    }
+
+                    if !store.metrics.thermal.fans.isEmpty {
+                        HStack {
+                            Label("Fans", systemImage: "fanblades").font(.system(size: 11, weight: .semibold))
+                            Spacer()
+                            Text(store.metrics.thermal.fans.map { String(Int($0.value.rounded())) }.joined(separator: " / ") + " RPM")
+                                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                        }.cardSurface()
                     }
 
                     VStack(alignment: .leading, spacing: 12) {

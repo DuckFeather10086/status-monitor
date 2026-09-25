@@ -12,8 +12,8 @@ struct MonitorSettings: Codable, Equatable {
     var smartInterval = 60.0
     var interface = "auto"
     var sensor = "cpu"
-    var showCPU = true
-    var showGPU = true
+    var showCPU = false
+    var showGPU = false
     var showNetwork = true
     var showTemperature = false
     var compact = false
@@ -40,6 +40,17 @@ final class Preferences: ObservableObject {
         settings = defaults.data(forKey: "settings.v2").flatMap { try? JSONDecoder().decode(MonitorSettings.self, from: $0) } ?? MonitorSettings()
         if defaults.data(forKey: "settings.v2") == nil, let oldColor = defaults.string(forKey: "backgroundColor") {
             settings.color = oldColor
+        }
+        // Apply the requested network-only layout to existing installations once,
+        // preserving backgrounds, sampling preferences, and future manual changes.
+        if !defaults.bool(forKey: "networkMenu.v1") {
+            settings.showCPU = false
+            settings.showGPU = false
+            settings.showTemperature = false
+            settings.showNetwork = true
+            settings.compact = false
+            if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "settings.v2") }
+            defaults.set(true, forKey: "networkMenu.v1")
         }
         image = NSImage(contentsOf: imageURL)
     }

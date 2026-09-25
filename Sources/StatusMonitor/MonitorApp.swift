@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        if preferences.settings.pinned { windows.showPanel() }
+        if preferences.settings.pinned || CommandLine.arguments.contains("--panel") { windows.showPanel() }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         windows.showPanel()
@@ -77,6 +77,14 @@ final class WindowCoordinator: NSObject, ObservableObject, NSWindowDelegate {
             window.setFrameAutosaveName("StatusMonitorPanel")
             panel = window
         }
+        // Bring back a panel saved on a disconnected external display.
+        if let panel, !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(panel.frame) }),
+           let screen = NSScreen.main {
+            var frame = panel.frame
+            frame.origin = NSPoint(x: screen.visibleFrame.midX - frame.width / 2,
+                                   y: screen.visibleFrame.midY - frame.height / 2)
+            panel.setFrame(frame, display: true)
+        }
         panel?.orderFrontRegardless()
         panelVisible = true
         preferences.settings.pinned = true
@@ -116,7 +124,8 @@ struct MenuBarLabel: View {
                 if settings.showGPU { Text("G \(percent(store.metrics.gpuUsage))") }
                 if settings.showTemperature { Text(temperature(store.metrics.temperature(sensor: settings.sensor))) }
                 if settings.showNetwork {
-                    Text("↓\(shortRate(store.metrics.network.download)) ↑\(shortRate(store.metrics.network.upload))")
+                    Image(nsImage: NetworkMenuImage.make(download: store.metrics.network.download, upload: store.metrics.network.upload))
+                        .accessibilityLabel("Upload \(shortRate(store.metrics.network.upload)), download \(shortRate(store.metrics.network.download))")
                 }
             }
         }.font(.system(size: 11, weight: .medium, design: .monospaced)).monospacedDigit()
