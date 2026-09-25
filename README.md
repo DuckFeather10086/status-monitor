@@ -1,43 +1,57 @@
 # Status Monitor
 
-SwiftUI macOS 菜单栏监视器：CPU、GPU、温度、网络上传/下载、S.M.A.R.T. 状态，以及 MacBook 内置电池。
+A lightweight native macOS monitor built with SwiftUI and AppKit. No subscriptions, accounts, telemetry, or runtime dependencies.
 
-## 在另一台 Mac 上启动
+## Install
 
-需要 macOS 13+ 和 Swift 5.9+（Xcode Command Line Tools 即可）。没有开发工具时先运行 `xcode-select --install`。私有仓库需要有访问权限的 GitHub 账号和 SSH 密钥：
-
-```sh
-git clone git@github.com:DuckFeather10086/status-monitor.git
-cd status-monitor
-./build-app.sh
-open StatusMonitor.app
-```
-
-构建自动匹配当前 Mac 的架构，Apple Silicon 和 Intel Mac 均可从源码构建。可将生成的应用拖入「应用程序」。本地构建使用 ad-hoc 签名，没有 Developer ID 签名或公证。
-
-更新：在仓库里运行 `git pull --ff-only`，退出旧应用后重新构建并打开。
-
-## 电池
-
-通过 IOKit Power Sources 接口显示内置电池电量、充电中、已充满、接电未充电及电池供电状态。系统提供有效估计时，显示剩余使用时间或充满时间。Mac mini 等无内置电池的机器自动隐藏电池区域，外接 UPS 不会被识别为 MacBook 电池。
-
-电池放在展开面板，避免增加菜单栏宽度。面板底部有背景颜色设置和退出按钮。
-
-## 验证
+macOS 13+ and Swift 5.9+. Install Command Line Tools with `xcode-select --install` if needed. Build on the Mac where you will run the app; Apple Silicon and Intel are supported.
 
 ```sh
-zsh test.sh
-./build-app.sh
+git clone https://github.com/DuckFeather10086/status-monitor.git && cd status-monitor && ./build-app.sh && open StatusMonitor.app
 ```
 
-包含充放电、暂停充电、满电、无电池/UPS、无效容量和未知时间的测试。Mac mini 上无法验证实际 MacBook 电池，需要在笔记本上实测。
+## Update
 
-## 当前限制
+For a checkout in your home directory:
 
-- 菜单栏文本和展开面板每 2 秒刷新。
-- GPU 利用率读取 `IOAccelerator` 的公开 IORegistry 属性；不同 Apple 芯片/系统版本可能显示 `N/A`。
-- 温度读取 `IOHWSensor`；不同机型暴露的传感器集合不同。
-- S.M.A.R.T. 每约 16 秒读取一次并保留最近结果；APFS 逻辑盘可能无法返回物理盘状态。
-- 网速汇总非回环接口，VPN/桥接环境可能重复计数。
-- 菜单栏仍受 macOS 可用空间和刘海区域限制；目前没有独立悬浮窗，不能保证输入法菜单增多时读数始终可见。
-- 自定义背景针对展开面板，不是整个 macOS 菜单栏。
+```sh
+cd ~/status-monitor && git pull --ff-only && ./build-app.sh && open StatusMonitor.app
+```
+
+The build script stops only the running app inside that checkout after compilation succeeds. If you previously copied the app into Applications, quit that copy and replace it with the newly built app. Builds use ad-hoc signing, not Developer ID notarization.
+
+## Features
+
+- **CPU:** overall load, per-logical-core bars, and a rolling two-minute graph. Numbered cores do not claim a physical P/E-core mapping.
+- **GPU:** utilization and history, plus separate device / Renderer / Tiler readings where exposed. Expand **GPU engines** for details. For multiple GPUs the headline shows the highest utilization, with individual readings below. GPU compute-core utilization is not exposed.
+- **Temp:** read-only AppleSMC, with CPU/GPU sensor mappings for Intel and M1–M5 / A18 Pro. The default is the average of available mapped CPU sensors. Choose a raw sensor under Settings → Temp. Invalid or missing readings show **—**, never an invented fallback. New models can expose different keys; not every mapping has been tested on hardware.
+- **Fans:** measured RPM when available; no fan-control writes or privileged helper.
+- **Network:** 64-bit interface counters, rates, graphs, and session traffic. Auto selects the primary interface; choose `en…` or `utun…` explicitly in Settings. Only one interface is counted, avoiding VPN/physical-interface double counting. Totals reset on interface changes/relaunch.
+- **SMART:** resolves APFS physical stores and caches diskutil health. Refresh interval: 30s / 1m / 5m / 15m. Some disks do not report SMART.
+- **Battery:** percentage, charging / plugged in / full status, and available system time estimates. Hidden on desktops; UPS devices are excluded.
+
+## Appearance
+
+Open the sliders button → **Background → Choose Image…**. PNG, JPEG, HEIC, TIFF and WebP are accepted when supported by the system decoder. Images are downsampled to 1600 px and saved locally under `~/Library/Application Support/StatusMonitor/background.png`, so moving the original file does not break the background. **Dim**, **Blur**, **Color**, and **Remove** are available. Backgrounds apply to the popup and pinned panel, not the macOS menu bar.
+
+**Pin** opens a movable floating panel across Spaces. It remains available when the menu bar is crowded by an input method or the display notch. Close or unpin it to dismiss. Reopening the app also opens this panel. Settings include **Icon Only** and individual menu-bar metric toggles to save space. All app labels use short English text.
+
+## Verification
+
+```sh
+zsh test.sh && ./build-app.sh
+```
+
+Tests run with Command Line Tools alone: battery states, SMC encodings, CPU tick rollover, 64-bit network counters, interface switching, image persistence/invalid imports, and live sampling. Use `zsh test.sh --require-temperature` to also require a real CPU sensor on the development machine.
+
+Sensor diagnostics (no root required):
+
+```sh
+./StatusMonitor.app/Contents/MacOS/StatusMonitor --diagnostics
+```
+
+Hardware verified on an M4 Mac mini: CPU temperature, 10 logical-core loads, GPU utilization, fan RPM, primary-interface traffic, and SMART. This machine did not expose a valid mapped GPU temperature during verification. Actual MacBook battery behavior still requires laptop testing.
+
+## Credits
+
+Sensor ABI/mappings reference [Stats](https://github.com/exelban/stats), under the MIT license; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), also bundled inside the app. Interface selection and adjustable SMART polling were inspired by its [recent releases](https://github.com/exelban/stats/releases).

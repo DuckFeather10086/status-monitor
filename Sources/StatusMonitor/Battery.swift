@@ -27,14 +27,14 @@ struct BatteryMetrics: Sendable {
 
     var level: String { percentage.map { "\($0)%" } ?? "N/A" }
     var status: String {
-        if charged { return "已充满" }
-        if charging { return "正在充电" }
-        return externalPower ? "已接电源 · 未充电" : "电池供电"
+        if charged { return "Full" }
+        if charging { return "Charging" }
+        return externalPower ? "Plugged in" : "On battery"
     }
     var timeDescription: String? {
         guard let minutesRemaining else { return nil }
-        let duration = "\(minutesRemaining / 60) 小时 \(minutesRemaining % 60) 分钟"
-        return charging ? "预计 \(duration) 充满" : "预计剩余 \(duration)"
+        let duration = "\(minutesRemaining / 60)h \(minutesRemaining % 60)m"
+        return charging ? "\(duration) to full" : "\(duration) left"
     }
 
     static func read() -> BatteryMetrics? {

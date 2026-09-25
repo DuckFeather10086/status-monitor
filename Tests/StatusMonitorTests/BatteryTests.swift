@@ -33,7 +33,7 @@ final class BatteryTests {
         let battery = try XCTUnwrap(BatteryMetrics(description: source([kIOPSTimeToEmptyKey: 125])))
         XCTAssertEqual(battery.percentage, 50)
         XCTAssertEqual(battery.minutesRemaining, 125)
-        XCTAssertEqual(battery.status, "电池供电")
+        XCTAssertEqual(battery.status, "On battery")
     }
 
     func testChargingUsesTimeToFull() throws {
@@ -41,14 +41,14 @@ final class BatteryTests {
             kIOPSIsChargingKey: true, kIOPSPowerSourceStateKey: kIOPSACPowerValue,
             kIOPSTimeToFullChargeKey: 35, kIOPSTimeToEmptyKey: 200])))
         XCTAssertEqual(battery.minutesRemaining, 35)
-        XCTAssertEqual(battery.status, "正在充电")
+        XCTAssertEqual(battery.status, "Charging")
     }
 
     func testPausedChargingHasNoCountdown() throws {
         let battery = try XCTUnwrap(BatteryMetrics(description: source([
             kIOPSPowerSourceStateKey: kIOPSACPowerValue, kIOPSTimeToEmptyKey: 200])))
         XCTAssertNil(battery.minutesRemaining)
-        XCTAssertEqual(battery.status, "已接电源 · 未充电")
+        XCTAssertEqual(battery.status, "Plugged in")
     }
 
     func testMissingInvalidAndExternalSources() {
@@ -62,7 +62,7 @@ final class BatteryTests {
     func testFullyCharged() throws {
         let battery = try XCTUnwrap(BatteryMetrics(description: source([
             kIOPSIsChargedKey: true, kIOPSPowerSourceStateKey: kIOPSACPowerValue])))
-        XCTAssertEqual(battery.status, "已充满")
+        XCTAssertEqual(battery.status, "Full")
         XCTAssertNil(battery.minutesRemaining)
     }
 }

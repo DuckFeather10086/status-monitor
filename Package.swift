@@ -10,8 +10,10 @@ let package = Package(
         .executable(name: "StatusMonitor", targets: ["StatusMonitor"])
     ],
     targets: [
+        .target(name: "CSMC", linkerSettings: [.linkedFramework("IOKit")]),
         .executableTarget(
             name: "StatusMonitor",
+            dependencies: ["CSMC"],
             path: "Sources/StatusMonitor"
         )
     ]
