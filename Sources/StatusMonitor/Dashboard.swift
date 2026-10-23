@@ -77,20 +77,11 @@ struct DashboardView: View {
                         }.cardSurface()
                     }
 
-                    HStack(spacing: 10) {
+                    HStack(alignment: .top, spacing: 10) {
                         MetricCard(title: "Temp", value: temperature(selectedTemperature), tint: .orange,
                                    history: store.history.map(\.temperature), ceiling: 120)
                             .help(selectedTemperature == nil ? "\(preferences.settings.sensor): unavailable · \(store.metrics.thermal.status)" : "\(preferences.settings.sensor) · SMC")
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack {
-                                Label("Disk", systemImage: "internaldrive").foregroundStyle(.secondary)
-                                Spacer()
-                                Circle().fill(store.metrics.smartStatus == "Verified" ? Color.mint : Color.orange).frame(width: 5, height: 5)
-                            }.font(.system(size: 10, weight: .medium))
-                            Text(store.metrics.smartStatus).font(.system(size: 15, weight: .semibold, design: .rounded))
-                                .lineLimit(1).minimumScaleFactor(0.7)
-                            Text("S.M.A.R.T.").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-                        }.frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading).cardSurface()
+                        DiskCard(disk: store.metrics.disk).frame(maxWidth: .infinity)
                     }
 
                     if !store.metrics.thermal.fans.isEmpty {
@@ -235,5 +226,106 @@ struct Sparkline: View {
                 path.addLine(to: CGPoint(x: geometry.size.width, y: geometry.size.height))
             }.stroke(.white.opacity(0.08), lineWidth: 0.5)
         }.accessibilityHidden(true)
+    }
+}
+
+// MARK: - Disk
+
+struct DiskCard: View {
+    let disk: DiskMetrics
+    @ViewState private var expanded = false
+
+    private var tint: Color { disk.isFailing ? .red : (disk.isHealthy ? .mint : .orange) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Disk", systemImage: "internaldrive").font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
+                Spacer()
+                Circle().fill(tint).frame(width: 5, height: 5)
+                Text(disk.status).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
+            }
+
+            if let fraction = disk.usedFraction, let capacity = disk.capacityBytes {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(Int((fraction * 100).rounded()))%")
+                            .font(.system(size: 20, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text("used").font(.system(size: 9)).foregroundStyle(.secondary)
+                        Spacer()
+                        Text(byteCount(Double(disk.usedBytes ?? 0)) + " / " + byteCount(Double(capacity)))
+                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.07))
+                            Capsule().fill(fraction > 0.9 ? Color.red : (fraction > 0.75 ? Color.orange : Color.mint))
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                    }.frame(height: 4)
+                    if let free = disk.freeBytes {
+                        Text("\(byteCount(Double(free))) free").font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if disk.supportsSMARTCounters {
+                VStack(spacing: 3) {
+                    if let wear = disk.percentageUsed { diskRow("Wear", value: String(format: "%.0f%%", wear)) }
+                    if let temp = disk.temperature { diskRow("Temp", value: String(format: "%.0f°C", temp)) }
+                    if let hours = disk.powerOnHours { diskRow("Power on", value: hoursText(hours)) }
+                    if let cycles = disk.powerCycles { diskRow("Cycles", value: "\(cycles)") }
+                    if let errors = disk.mediaErrors {
+                        diskRow("Media errors", value: "\(errors)", highlight: errors > 0)
+                    }
+                    if let spare = disk.availableSpare {
+                        let low = spare < (disk.spareThreshold ?? 0) || spare < 10
+                        diskRow("Spare", value: String(format: "%.0f%%", spare), highlight: low)
+                    }
+                }
+            }
+
+            if let written = disk.hostBytesWritten {
+                Text("Written \(byteCount(written))" + (disk.hostBytesRead.map { " · Read \(byteCount($0))" } ?? ""))
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                    .help("Total host bytes written/read since the drive was first used")
+            }
+
+            Button { expanded.toggle() } label: {
+                HStack(spacing: 3) {
+                    Text("Details").font(.system(size: 9))
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 7))
+                }.foregroundStyle(.tertiary).contentShape(Rectangle())
+            }.buttonStyle(.plain)
+
+            if expanded {
+                VStack(alignment: .leading, spacing: 2) {
+                    if let name = disk.mediaName { diskRow("Model", value: name) }
+                    if let bus = disk.bus { diskRow("Bus", value: bus) }
+                    if let ssd = disk.solidState { diskRow("Media", value: ssd ? "SSD" : "HDD") }
+                    if let capacity = disk.capacityBytes { diskRow("Capacity", value: byteCount(Double(capacity))) }
+                    if let unsafe = disk.unsafeShutdowns {
+                        diskRow("Unsafe off", value: "\(unsafe)", highlight: unsafe > 0)
+                    }
+                    ForEach(disk.remaining) { item in diskRow(item.key, value: "\(item.value)") }
+                }.padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .topLeading)
+        .cardSurface()
+    }
+
+    private func diskRow(_ title: String, value: String, highlight: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Text(title).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(value).foregroundStyle(highlight ? Color.orange : Color.secondary).monospacedDigit().lineLimit(1)
+        }.font(.system(size: 9, design: .monospaced))
+    }
+
+    private func hoursText(_ hours: UInt64) -> String {
+        if hours < 1000 { return "\(hours) h" }
+        return "\(hours) h · \(hours / 24) d"
     }
 }

@@ -6,6 +6,7 @@ struct MonitorTests {
     @MainActor
     static func main() async throws {
         testCounters()
+        testDiskInfo()
         testMenuImage()
         try testImagePersistence()
         let sampler = SystemSampler()
@@ -39,6 +40,70 @@ struct MonitorTests {
         _ = network.update(nil, interface: nil, time: 10)
         precondition(network.received == 0)
         print("PASS: CPU tick wrap, 64-bit traffic, link reset, interface switch, offline")
+    }
+
+
+    static func testDiskInfo() {
+        let root: [String: Any] = [
+            "APFSPhysicalStores": [["APFSPhysicalStore": "disk0s2"]],
+            "CapacityInUse": 152_700_000_000,
+            "APFSContainerSize": 245_107_195_904,
+            "APFSContainerFree": 64_000_000_000,
+            "VolumeName": "Macintosh HD",
+        ]
+        let whole: [String: Any] = [
+            "SMARTStatus": "Verified",
+            "MediaName": "APPLE SSD AP0256Z",
+            "SolidState": true,
+            "BusProtocol": "Apple Fabric",
+            "TotalSize": 251_000_193_024,
+            "SMARTDeviceSpecificKeysMayVaryNotGuaranteed": [
+                "AVAILABLE_SPARE": 100, "AVAILABLE_SPARE_THRESHOLD": 99, "PERCENTAGE_USED": 2,
+                "DATA_UNITS_READ_0": 85_213_391, "DATA_UNITS_WRITTEN_0": 50_351_265,
+                "POWER_ON_HOURS_0": 1072, "POWER_CYCLES_0": 193,
+                "UNSAFE_SHUTDOWNS_0": 14, "MEDIA_ERRORS_0": 0, "TEMPERATURE": 309,
+                "CONTROLLER_BUSY_TIME_0": 7,
+            ],
+        ]
+        precondition(DiskInfoParser.physicalStoreID(root: root) == "disk0s2")
+        precondition(DiskInfoParser.wholeDisk(of: "disk0s2") == "disk0")
+        precondition(DiskInfoParser.wholeDisk(of: "disk3s1s1") == "disk3")
+        precondition(DiskInfoParser.wholeDisk(of: "disk0") == "disk0")
+        guard let disk = DiskInfoParser.parse(root: root, apfsListing: nil, wholeDisk: whole) else {
+            preconditionFailure("valid diskutil payload must parse")
+        }
+        precondition(disk.status == "Verified" && disk.isHealthy && !disk.isFailing)
+        precondition(disk.mediaName == "APPLE SSD AP0256Z" && disk.solidState == true)
+        precondition(disk.percentageUsed == 2 && disk.availableSpare == 100 && disk.spareThreshold == 99)
+        precondition(disk.powerOnHours == 1072 && disk.powerCycles == 193 && disk.unsafeShutdowns == 14)
+        precondition(disk.mediaErrors == 0 && disk.supportsSMARTCounters)
+        precondition(abs((disk.temperature ?? 0) - 35.85) < 0.01, "TEMPERATURE is Kelvin")
+        precondition(disk.dataUnitsWritten == 50_351_265)
+        precondition(abs((disk.hostBytesWritten ?? 0) - 50_351_265 * 512 * 1024) < 1, "data units are 512 KiB")
+        // 13.65 GB of 245.1 GB container: the boot snapshot must not be shown as ~18%.
+        let used = disk.usedFraction ?? 0
+        precondition(abs(used - 152_700_000_000.0 / 245_107_195_904.0) < 1e-9, "usage uses the whole container")
+        precondition(disk.remaining.contains { $0.key == "CONTROLLER_BUSY_TIME_0" }, "unknown NVMe keys stay visible")
+        precondition(!disk.remaining.contains { $0.key == "PERCENTAGE_USED" }, "claimed keys must not repeat")
+
+        // Splitting a 64-bit counter across the low/high NVMe halves.
+        let lowWord = UInt32.max
+        let wide: [String: Any] = [
+            "SMARTStatus": "Verified",
+            "SMARTDeviceSpecificKeysMayVaryNotGuaranteed": [
+                "DATA_UNITS_WRITTEN_0": lowWord, "DATA_UNITS_WRITTEN_1": UInt64(2),
+            ],
+        ]
+        let split = DiskInfoParser.parse(root: root, apfsListing: nil, wholeDisk: wide)
+        let expected = (UInt64(2) << 32) | UInt64(lowWord)
+        precondition(split?.dataUnitsWritten == expected, "high word must shift by 32, got \(split?.dataUnitsWritten as Any)")
+
+        // Missing S.M.A.R.T. keys must degrade, never invent values.
+        let bare = DiskInfoParser.parse(root: root, apfsListing: nil, wholeDisk: ["SMARTStatus": "Not Supported"])
+        precondition(bare?.status == "Not Supported" && bare?.supportsSMARTCounters == false)
+        precondition(bare?.percentageUsed == nil && bare?.temperature == nil)
+        precondition(DiskInfoParser.parse(root: root, apfsListing: nil, wholeDisk: [:]) == nil, "empty info is unavailable")
+        print("PASS: disk usage, NVMe counters, Kelvin->Celsius, 64-bit word halves, degradation")
     }
 
     static func testMenuImage() {

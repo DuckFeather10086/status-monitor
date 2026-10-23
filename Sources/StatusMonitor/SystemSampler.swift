@@ -17,6 +17,7 @@ struct SystemMetrics: Sendable {
     var thermal = ThermalMetrics()
     var network = NetworkSnapshot()
     var smartStatus = "—"
+    var disk = DiskMetrics.unavailable
     var battery: BatteryMetrics?
     var sampledAt = Date()
     var gpuUsage: Double? { gpus.compactMap(\.usage).max() }
@@ -46,18 +47,20 @@ actor SystemSampler {
     private var networkReader = NetworkReader()
     private let sensors = SensorReader()
     private var cachedSMART = "—"
+    private var cachedDisk = DiskMetrics.unavailable
     private var lastSMART = Date.distantPast
 
     func sample(interface: String, smartInterval: Double) -> SystemMetrics {
         let cpu = readCPU()
         let thermal = sensors.read()
         if Date().timeIntervalSince(lastSMART) >= smartInterval {
-            cachedSMART = readSMART()
+            cachedDisk = readDisk()
+            cachedSMART = cachedDisk.status
             lastSMART = Date()
         }
         return SystemMetrics(cpuUsage: cpu.total, cores: cpu.cores, gpus: readGPU(), thermal: thermal,
                              network: networkReader.read(selection: interface), smartStatus: cachedSMART,
-                             battery: BatteryMetrics.read(), sampledAt: Date())
+                             disk: cachedDisk, battery: BatteryMetrics.read(), sampledAt: Date())
     }
 
     private func readCPU() -> (total: Double?, cores: [Double?]) {
@@ -120,27 +123,13 @@ actor SystemSampler {
         return values.sorted { $0.id < $1.id }
     }
 
-    private func readSMART() -> String {
-        guard let root = CommandRunner.plist(["info", "-plist", "/"]) else { return "Unavailable" }
-        let containerID = root["APFSContainerReference"] as? String ?? root["ParentWholeDisk"] as? String
-        var disks: [String] = []
-        if let containerID, let listing = CommandRunner.plist(["apfs", "list", "-plist"]),
-           let containers = listing["Containers"] as? [[String: Any]],
-           let container = containers.first(where: { $0["ContainerReference"] as? String == containerID }),
-           let physical = container["PhysicalStores"] as? [[String: Any]] {
-            disks = physical.compactMap { $0["DeviceIdentifier"] as? String }
-        }
-        if disks.isEmpty, let parent = root["ParentWholeDisk"] as? String { disks = [parent] }
-        let statuses = disks.map { disk -> String in
-            guard let info = CommandRunner.plist(["info", "-plist", disk]) else { return "Unavailable" }
-            if let status = info["SMARTStatus"] as? String { return status }
-            if let parent = info["ParentWholeDisk"] as? String,
-               let status = CommandRunner.plist(["info", "-plist", parent])?["SMARTStatus"] as? String { return status }
-            return "Unsupported"
-        }
-        if statuses.contains(where: { $0.lowercased().contains("fail") }) { return "Failing" }
-        if !statuses.isEmpty, statuses.allSatisfy({ $0 == "Verified" }) { return "Verified" }
-        return statuses.first(where: { $0 != "Verified" }) ?? "Unavailable"
+    private func readDisk() -> DiskMetrics {
+        guard let root = CommandRunner.plist(["info", "-plist", "/"]),
+              let store = DiskInfoParser.physicalStoreID(root: root) else { return .unavailable }
+        let whole = DiskInfoParser.wholeDisk(of: store)
+        guard let wholeDisk = CommandRunner.plist(["info", "-plist", whole]) else { return .unavailable }
+        let listing = CommandRunner.plist(["apfs", "list", "-plist"])
+        return DiskInfoParser.parse(root: root, apfsListing: listing, wholeDisk: wholeDisk) ?? .unavailable
     }
 }
 

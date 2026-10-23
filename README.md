@@ -27,7 +27,7 @@ The build script stops only the running app inside that checkout after compilati
 - **Temp:** read-only AppleSMC, with CPU/GPU sensor mappings for Intel and M1–M5 / A18 Pro. The default is the average of available mapped CPU sensors. Choose a raw sensor under Settings → Temp. Invalid or missing readings show **—**, never an invented fallback. New models can expose different keys; not every mapping has been tested on hardware.
 - **Fans:** measured RPM in a separate **Fans** row when available; no fan-control writes or privileged helper.
 - **Network:** 64-bit interface counters, rates, graphs, and session traffic. Auto selects the primary interface; choose `en…` or `utun…` explicitly in Settings. Only one interface is counted, avoiding VPN/physical-interface double counting. Totals reset on interface changes/relaunch.
-- **Disk / S.M.A.R.T.:** disk health only (for example, **Verified**), separate from fan RPM. Resolves APFS physical stores and caches diskutil health. Refresh interval: 30s / 1m / 5m / 15m. Some disks do not report SMART.
+- **Disk / S.M.A.R.T.:** health (**Verified** / **Failing**), capacity used, free space, and the NVMe counters Apple exposes: wear (`PERCENTAGE_USED`), drive temperature, power-on hours, power cycles, available spare vs. spare threshold, unsafe shutdowns, media errors, and lifetime host bytes read/written. **Details** also shows the model, bus, media type, and any remaining unmapped NVMe keys. Usage is measured against the whole APFS container, so the read-only boot snapshot is never counted twice as used. Refresh interval: 30s / 1m / 5m / 15m. Apple does not expose the raw ATA attribute table; some disks report no SMART at all.
 - **Battery:** percentage, charging / plugged in / full status, and available system time estimates. Hidden on desktops; UPS devices are excluded.
 
 ## Appearance
@@ -44,7 +44,7 @@ The menu bar defaults to a fixed 72-point, two-line speed label: **↑ upload** 
 zsh test.sh && ./build-app.sh
 ```
 
-Tests run with Command Line Tools alone: battery states, SMC encodings, CPU tick rollover, 64-bit network counters, interface switching, image persistence/invalid imports, and live sampling. Use `zsh test.sh --require-temperature` to also require a real CPU sensor on the development machine.
+Tests run with Command Line Tools alone: battery states, SMC encodings, CPU tick rollover, 64-bit network counters, interface switching, disk usage/SMART parsing (Kelvin, 512 KiB data units, split 32-bit word halves, graceful degradation), image persistence/invalid imports, and live sampling. Use `zsh test.sh --require-temperature` to also require a real CPU sensor on the development machine.
 
 Sensor diagnostics (no root required):
 
