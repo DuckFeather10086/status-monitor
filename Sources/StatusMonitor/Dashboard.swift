@@ -1,12 +1,14 @@
 import SwiftUI
 
+private typealias ViewState = SwiftUI.State
+
 struct DashboardView: View {
     @ObservedObject var store: MetricsStore
     @ObservedObject var preferences: Preferences
     @ObservedObject var windows: WindowCoordinator
     var floating = false
-    @State private var showCores = true
-    @State private var showGPU = false
+    @ViewState private var showCores = true
+    @ViewState private var showGPU = false
 
     private var selectedTemperature: Double? { store.metrics.temperature(sensor: preferences.settings.sensor) }
 
